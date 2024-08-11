@@ -30,10 +30,52 @@ type
     constructor Create(w, h: integer);
     destructor Destroy; override;
     function Check(obj: TAnswer): Boolean;
-    procedure Initialize(Data: TArray<TPi>);
+    procedure Init(Data: TArray<TPi>);
     procedure Assign(ans: TAnswer);
     property Datas[state: TPoint]: TArray<TPi> read GetData
       write SetData; default;
+  end;
+
+  TAgentData = record
+    state: TPoint;
+    action: integer;
+    reward: Single;
+  end;
+
+  TRandomAgent = class
+  const
+    gamma = 0.9;
+    action_size = 4;
+  private
+    FCnts: TArray<integer>;
+    FV: TArray<Single>;
+    memory: TArray<TAgentData>;
+    function GetCnts(state: TPoint): integer;
+    procedure SetCnts(state: TPoint; const Value: integer);
+    function GetV(state: TPoint): Single;
+    procedure SetV(state: TPoint; const Value: Single);
+  public
+    Pi: TAnswer;
+    constructor Create;
+    destructor Destroy; override;
+    procedure add(state: TPoint; action: integer; reward: Single);
+    procedure reset;
+    procedure eval;
+    function getAction(state: TPoint): integer;
+    procedure Init;
+    property cnts[state: TPoint]: integer read GetCnts write SetCnts;
+    property V[state:TPoint]: Single read GetV write SetV;
+  end;
+
+  TMcAgent = class(TRandomAgent)
+  public
+
+  end;
+
+  TAgentEnv = record
+    next_state: TPoint;
+    reward: Single;
+    done: Boolean;
   end;
 
   TForm1 = class(TForm)
@@ -43,6 +85,7 @@ type
     Action2: TAction;
     Action3: TAction;
     Action4: TAction;
+    Action5: TAction;
     procedure FormPaint(Sender: TObject);
     procedure Action1Execute(Sender: TObject);
     procedure Action2Execute(Sender: TObject);
@@ -50,6 +93,7 @@ type
     procedure FormDestroy(Sender: TObject);
     procedure Action3Execute(Sender: TObject);
     procedure Action4Execute(Sender: TObject);
+    procedure Action5Execute(Sender: TObject);
   private
     FV, reward_map: TArray<Single>;
     action_space: TArray<integer>;
@@ -67,11 +111,12 @@ type
   public
     { Public 宣言 }
     Answer: TAnswer;
+    agent: TRandomAgent;
     function nextState(state: TPoint; action: integer): TPoint;
     function reward(state, next_state: TPoint; action: integer): Single;
-    procedure evalOnestep(pi: TAnswer; V: TArray<Single>;
+    procedure evalOnestep(Pi: TAnswer; V: TArray<Single>;
       const gamma: Single = 0.9);
-    procedure policyEval(pi: TAnswer; V: TArray<Single>; gamma: Single;
+    procedure policyEval(Pi: TAnswer; V: TArray<Single>; gamma: Single;
       const threshold: Single = 0.001);
     procedure greedyPolicy(out pi_data: TAnswer; V: TArray<Single>;
       gamma: Single);
@@ -79,7 +124,9 @@ type
     procedure valueIter(V: TArray<Single>; gamma: Single;
       threshold: Single = 0.001; is_render: Boolean = true);
     function argmax(d: TArray<TPi>): integer;
-    function Initialize: Single;
+    function Init: Single;
+    function step(act: integer): TAgentEnv;
+    function reset: TPoint;
     property shape: TPoint read GetShape;
     property V[state: TPoint]: Single read GetV write SetV;
   end;
@@ -113,9 +160,8 @@ end;
 procedure TForm1.Action1Execute(Sender: TObject);
 var
   gamma: Single;
-  action_probs: TArray<TPi>;
 begin
-  gamma := Initialize;
+  gamma := Init;
   policyEval(Answer, FV, gamma);
   FormPaint(nil);
 end;
@@ -131,7 +177,7 @@ var
   new_pi: TAnswer;
   is_render: Boolean;
 begin
-  gamma := Initialize;
+  gamma := Init;
   is_render := true;
 
   new_pi := TAnswer.Create(wid, hei);
@@ -152,11 +198,12 @@ begin
   FormPaint(nil);
 end;
 
+// 価値反復法
 procedure TForm1.Action4Execute(Sender: TObject);
 var
   gamma: Single;
 begin
-  gamma := Initialize;
+  gamma := Init;
 
   valueIter(FV, gamma);
 
@@ -164,11 +211,41 @@ begin
   FormPaint(nil);
 end;
 
+// モンテカルロ法
+procedure TForm1.Action5Execute(Sender: TObject);
+const
+  episodes = 1000;
+var
+  state: TPoint;
+  action: integer;
+  Data: TAgentEnv;
+begin
+  for var epi := 1 to episodes do
+  begin
+    state := reset;
+    agent.reset;
+    while true do
+    begin
+      action := agent.getAction(state);
+      Data := step(action);
+
+      agent.add(state, action, Data.reward);
+      if Data.done then
+      begin
+        agent.eval;
+        break;
+      end;
+      state := Data.next_state;
+    end;
+  end;
+  FormPaint(nil);
+end;
+
 function TForm1.argmax(d: TArray<TPi>): integer;
 var
   max_value: Single;
 begin
-  max_value := -INFINITE;
+  max_value := NegInfinity;
   for var item in d do
     if max_value < item.action_prob then
       max_value := item.action_prob;
@@ -177,7 +254,7 @@ begin
       result := item.action;
 end;
 
-procedure TForm1.evalOnestep(pi: TAnswer; V: TArray<Single>;
+procedure TForm1.evalOnestep(Pi: TAnswer; V: TArray<Single>;
   const gamma: Single);
 var
   action: integer;
@@ -192,7 +269,7 @@ begin
       V[change(state)] := 0;
       continue;
     end;
-    items := pi[state];
+    items := Pi[state];
     new_V := 0;
 
     for var item in items do
@@ -218,8 +295,9 @@ begin
   Answer := TAnswer.Create(wid, hei);
   SetLength(reward_map, wid * hei);
   SetReward(goal_state, 1.0);
-  SetReward(wall_state, -100);
+  SetReward(wall_state, Nan);
   SetReward(Point(4, 2), -1.0);
+  agent := TRandomAgent.Create;
 end;
 
 procedure TForm1.FormDestroy(Sender: TObject);
@@ -229,6 +307,7 @@ begin
   Finalize(reward_map);
   Finalize(FV);
   Answer.Free;
+  agent.Free;
 end;
 
 procedure TForm1.FormPaint(Sender: TObject);
@@ -323,7 +402,7 @@ begin
   end;
 end;
 
-function TForm1.Initialize: Single;
+function TForm1.Init: Single;
 var
   action_probs: TArray<TPi>;
   obj: TPi;
@@ -377,7 +456,7 @@ begin
   Finalize(action_move_map);
 end;
 
-procedure TForm1.policyEval(pi: TAnswer; V: TArray<Single>; gamma: Single;
+procedure TForm1.policyEval(Pi: TAnswer; V: TArray<Single>; gamma: Single;
   const threshold: Single);
 var
   old_V: TArray<Single>;
@@ -386,7 +465,7 @@ begin
   while true do
   begin
     old_V := Copy(V, 0, Length(V));
-    evalOnestep(pi, V, gamma);
+    evalOnestep(Pi, V, gamma);
     delta := 0;
     for var i := 0 to wid * hei - 1 do
     begin
@@ -397,6 +476,12 @@ begin
     if delta < threshold then
       break;
   end;
+end;
+
+function TForm1.reset: TPoint;
+begin
+  agent_state := start_state;
+  result := agent_state;
 end;
 
 function TForm1.reward(state, next_state: TPoint; action: integer): Single;
@@ -412,6 +497,18 @@ end;
 procedure TForm1.SetV(state: TPoint; const Value: Single);
 begin
   FV[state.X - 1 + (state.Y - 1) * wid] := Value;
+end;
+
+function TForm1.step(act: integer): TAgentEnv;
+var
+  state, next_state: TPoint;
+begin
+  state := agent_state;
+  next_state := nextState(state, act);
+  result.next_state := next_state;
+  result.reward := reward(state, next_state, act);
+  result.done := next_state = goal_state;
+  agent_state := next_state;
 end;
 
 procedure TForm1.valueIter(V: TArray<Single>; gamma: Single; threshold: Single;
@@ -519,7 +616,7 @@ begin
   result := FData[state.X - 1 + (state.Y - 1) * FWid];
 end;
 
-procedure TAnswer.Initialize(Data: TArray<TPi>);
+procedure TAnswer.Init(Data: TArray<TPi>);
 begin
   for var state in states do
     Datas[state] := Copy(Data, 0, Length(Data));
@@ -528,6 +625,131 @@ end;
 procedure TAnswer.SetData(state: TPoint; const Value: TArray<TPi>);
 begin
   FData[state.X - 1 + (state.Y - 1) * FWid] := Copy(Value, 0, Length(Value));
+end;
+
+{ TRandomAgent }
+
+procedure TRandomAgent.add(state: TPoint; action: integer; reward: Single);
+var
+  Data: TAgentData;
+begin
+  Data.state := state;
+  Data.action := action;
+  Data.reward := reward;
+  memory := memory + [Data];
+end;
+
+constructor TRandomAgent.Create;
+var
+  Data: TPi;
+  Datas: TArray<TPi>;
+begin
+  Pi := Form1.Answer;
+  FV := Form1.FV;
+  Datas := [];
+  for var i := 0 to 3 do
+  begin
+    Data.action := i;
+    Data.action_prob := 0.25;
+    Datas := Datas + [Data];
+  end;
+  Pi.Init(Datas);
+  Finalize(Datas);
+  SetLength(FCnts, wid * hei);
+  memory := [];
+end;
+
+destructor TRandomAgent.Destroy;
+begin
+  Pi.Free;
+  Finalize(memory);
+  inherited;
+end;
+
+procedure TRandomAgent.eval;
+var
+  G: Single;
+  reverse: TArray<TAgentData>;
+  function reversed(d: TArray<TAgentData>): TArray<TAgentData>;
+  begin
+    result := [];
+    for var Data in d do
+      result := [Data] + result;
+  end;
+
+begin
+  G := 0;
+  reverse := reversed(memory);
+  for var Data in reverse do
+  begin
+    G := gamma * G + Data.reward;
+    cnts[Data.state] := cnts[Data.state] + 1;
+    V[Data.state] := V[Data.state] + (G - V[Data.state]) / cnts[Data.state];
+  end;
+  Finalize(reverse);
+end;
+
+function TRandomAgent.getAction(state: TPoint): integer;
+var
+  action_probs: TArray<TPi>;
+  e, i: Extended;
+begin
+  action_probs := Pi[state];
+  e := Random;
+  i := 0;
+  for var prob in action_probs do
+  begin
+    i := i + prob.action_prob;
+    result := prob.action;
+    if i > e then
+      break;
+  end;
+end;
+
+function TRandomAgent.GetCnts(state: TPoint): integer;
+begin
+  result := FCnts[change(state)];
+end;
+
+function TRandomAgent.GetV(state: TPoint): Single;
+begin
+  result := FV[change(state)];
+end;
+
+procedure TRandomAgent.Init;
+var
+  random_action: TArray<TPi>;
+  Data: TPi;
+begin
+  for var i := 0 to action_size - 1 do
+  begin
+    Data.action := i;
+    Data.action_prob := 0;
+    random_action := random_action + [Data];
+  end;
+  for var state in states do
+  begin
+    Pi[state] := random_action;
+    V[state] := 0;
+    cnts[state] := 0;
+  end;
+  Finalize(random_action);
+end;
+
+procedure TRandomAgent.reset;
+begin
+  Randomize;
+  Initialize(memory);
+end;
+
+procedure TRandomAgent.SetCnts(state: TPoint; const Value: integer);
+begin
+  FCnts[change(state)] := Value;
+end;
+
+procedure TRandomAgent.SetV(state: TPoint; const Value: Single);
+begin
+  FV[change(state)] := Value;
 end;
 
 end.
