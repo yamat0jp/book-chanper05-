@@ -35,6 +35,26 @@ object Form2: TForm2
     ParentFont = False
     Spacing = 0
   end
+  object RadioButton1: TRadioButton
+    Left = 752
+    Top = 87
+    Width = 113
+    Height = 17
+    Caption = 'action_meaning'
+    TabOrder = 1
+    OnClick = RadioButton1Click
+  end
+  object RadioButton2: TRadioButton
+    Left = 752
+    Top = 48
+    Width = 113
+    Height = 17
+    Caption = 'action_probs'
+    Checked = True
+    TabOrder = 2
+    TabStop = True
+    OnClick = RadioButton1Click
+  end
   object ActionManager1: TActionManager
     ActionBars = <
       item

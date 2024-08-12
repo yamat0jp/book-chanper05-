@@ -6,15 +6,17 @@ uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants,
   System.Classes, Vcl.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, System.Actions, Vcl.ActnList,
-  Vcl.PlatformDefaultStyleActnCtrls, Vcl.ActnMan, Vcl.ToolWin, Vcl.ActnCtrls;
+  Vcl.PlatformDefaultStyleActnCtrls, Vcl.ActnMan, Vcl.ToolWin, Vcl.ActnCtrls,
+  Vcl.StdCtrls;
 
 type
-  TPi = record
+  TAgentData = record
+    state: TPoint;
     action: integer;
-    prob: Single;
+    reward: Single;
   end;
 
-  TAnswer = TArray<TArray<TPi>>;
+  TAnswer = TArray<TArray<Single>>;
 
   TGridWorld = class
   const
@@ -22,24 +24,35 @@ type
     hei = 3;
   private
     FPi: TAnswer;
+    FQ: TAnswer;
+    reward_map: TArray<Single>;
+    action_space: TArray<integer>;
+    action_meaning: TArray<string>;
+    goal_state, wall_state, start_state, agent_state: TPoint;
   public
     constructor Create;
     destructor Destroy; override;
+    procedure init;
     procedure states(out d: TArray<TPoint>);
     function change(state: TPoint): integer;
+    procedure reversed(din, dout: TArray<TAgentData>);
   end;
 
   TAgent = class
   private
-    FPi: TAnswer;
-    env: TGridWorld;
-    function GetPi(state: TPoint): TArray<TPi>;
-    procedure SetPi(state: TPoint; const Value: TArray<TPi>);
+    FEnv: TGridWorld;
+    function GetPi(state: TPoint): TArray<Single>;
+    procedure SetPi(state: TPoint; const Value: TArray<Single>);
     function GetQ(state: TPoint; action: integer): Single;
     procedure SetQ(state: TPoint; action: integer; const Value: Single);
+  protected
+    FPi: TAnswer;
+    FQ: TAnswer;
+    property Env: TGridWorld read FEnv write FEnv;
   public
-    procedure Init; virtual;
-    property Pi[state: TPoint]: TArray<TPi> read GetPi write SetPi;
+    procedure init; virtual;
+    function getAction(state: TPoint): integer; virtual;
+    property Pi[state: TPoint]: TArray<Single> read GetPi write SetPi;
     property Q[state: TPoint; action: integer]: Single read GetQ write SetQ;
   end;
 
@@ -47,8 +60,15 @@ type
   const
     gamma = 0.9;
     alpha = 0.01;
+  private
+    memory: TArray<TAgentData>;
   public
-    constructor Create;
+    procedure init; override;
+    function getAction(state: TPoint): integer; override;
+    procedure add(state: TPoint; action: integer; reward: Single);
+    procedure update;
+    procedure greedy_probs(out action_probs: TArray<Single>; Q: TAnswer;
+      state: TPoint; epsilon: integer = 0; action_size: integer = 4);
   end;
 
   TForm2 = class(TForm)
@@ -56,10 +76,13 @@ type
     Action2: TAction;
     ActionToolBar1: TActionToolBar;
     Action1: TAction;
+    RadioButton1: TRadioButton;
+    RadioButton2: TRadioButton;
     procedure Action2Execute(Sender: TObject);
     procedure FormPaint(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
+    procedure RadioButton1Click(Sender: TObject);
   private
     { Private êÈåæ }
   public
@@ -76,6 +99,8 @@ implementation
 
 {$R *.dfm}
 
+uses Math, Types;
+
 procedure TForm2.Action2Execute(Sender: TObject);
 begin
   Close;
@@ -86,7 +111,7 @@ begin
   grid_world := TGridWorld.Create;
   mc_agent := TMcAgent.Create;
   mc_agent.FPi := grid_world.FPi;
-  mc_agent.Init;
+  mc_agent.init;
 end;
 
 procedure TForm2.FormDestroy(Sender: TObject);
@@ -101,7 +126,9 @@ const
   margin = 20;
 var
   states: TArray<TPoint>;
+  p: TPoint;
 begin
+  Canvas.FillRect(ClientRect);
   for var i := 1 to grid_world.wid + 1 do
   begin
     Canvas.MoveTo(i * size, size);
@@ -112,28 +139,48 @@ begin
     Canvas.MoveTo(size, i * size);
     Canvas.LineTo((grid_world.wid + 1) * size, i * size);
   end;
-  for var i := 1 to grid_world.wid do
-    for var j := 1 to grid_world.hei do
-    begin
-      Canvas.MoveTo(i * size, j * size);
-      Canvas.LineTo((i + 1) * size, (j + 1) * size);
-      Canvas.MoveTo(i * size, (j + 1) * size);
-      Canvas.LineTo((i + 1) * size, j * size);
-    end;
-  grid_world.states(states);
-  for var state in states do
-    for var prob in mc_agent.Pi[state] do
-    begin
-      Canvas.TextOut(state.X * size + size div 2, state.Y * size + margin,
-        prob.prob.ToString);
-      Canvas.TextOut(state.X * size + size div 2, (state.Y + 1) * size - 2 *
-        margin, prob.prob.ToString);
-      Canvas.TextOut(state.X * size + margin, state.Y * size + size div 2,
-        prob.prob.ToString);
-      Canvas.TextOut((state.X + 1) * size - 2 * margin,
-        state.Y * size + size div 2, prob.prob.ToString);
-    end;
-  Finalize(states);
+  if RadioButton2.Checked then
+  begin
+    for var i := 1 to grid_world.wid do
+      for var j := 1 to grid_world.hei do
+      begin
+        Canvas.MoveTo(i * size, j * size);
+        Canvas.LineTo((i + 1) * size, (j + 1) * size);
+        Canvas.MoveTo(i * size, (j + 1) * size);
+        Canvas.LineTo((i + 1) * size, j * size);
+      end;
+    grid_world.states(states);
+    for var state in states do
+      for var prob in mc_agent.Pi[state] do
+      begin
+        Canvas.TextOut(state.X * size + size div 2, state.Y * size + margin,
+          prob.ToString);
+        Canvas.TextOut(state.X * size + size div 2, (state.Y + 1) * size - 2 *
+          margin, prob.ToString);
+        Canvas.TextOut(state.X * size + margin, state.Y * size + size div 2,
+          prob.ToString);
+        Canvas.TextOut((state.X + 1) * size - 2 * margin,
+          state.Y * size + size div 2, prob.ToString);
+      end;
+    Finalize(states);
+  end
+  else
+  begin
+    grid_world.states(states);
+    for var state in states do
+      Canvas.TextOut(state.X * size + size div 2, state.Y * size + size div 2,
+        grid_world.action_meaning[0]);
+    Finalize(states);
+  end;
+  p := grid_world.wall_state;
+  Canvas.Brush.Color := clBlack;
+  Canvas.Rectangle(p.X * size, p.Y * size, (p.X + 1) * size, (p.Y + 1) * size);
+  Canvas.Brush.Color := Color;
+end;
+
+procedure TForm2.RadioButton1Click(Sender: TObject);
+begin
+  FormPaint(nil);
 end;
 
 { TGridWorld }
@@ -146,6 +193,8 @@ end;
 constructor TGridWorld.Create;
 begin
   SetLength(FPi, wid * hei);
+  SetLength(reward_map, wid * hei);
+  init;
 end;
 
 destructor TGridWorld.Destroy;
@@ -153,7 +202,32 @@ begin
   for var i := 0 to wid * hei - 1 do
     Finalize(FPi[i]);
   Finalize(FPi);
+  Finalize(action_space);
+  Finalize(action_meaning);
+  Finalize(reward_map);
   inherited;
+end;
+
+procedure TGridWorld.init;
+begin
+  action_space := [0, 1, 2, 3];
+  action_meaning := ['Å™', 'Å´', 'Å©', 'Å®'];
+  for var i := 0 to High(reward_map) do
+    reward_map[i] := 0;
+  goal_state := Point(4, 1);
+  wall_state := Point(2, 2);
+  start_state := Point(1, 3);
+  agent_state := start_state;
+  reward_map[change(goal_state)] := 1.0;
+  reward_map[change(Point(4, 2))] := -1.0;
+  reward_map[change(wall_state)] := Nan;
+end;
+
+procedure TGridWorld.reversed(din, dout: TArray<TAgentData>);
+begin
+  dout := [];
+  for var data in din do
+    dout := [data] + dout;
 end;
 
 procedure TGridWorld.states(out d: TArray<TPoint>);
@@ -166,51 +240,119 @@ end;
 
 { TAgent }
 
-function TAgent.GetPi(state: TPoint): TArray<TPi>;
+function TAgent.getAction(state: TPoint): integer;
 begin
-  result := FPi[env.change(state)];
+
+end;
+
+function TAgent.GetPi(state: TPoint): TArray<Single>;
+begin
+  result := FPi[Env.change(state)];
 end;
 
 function TAgent.GetQ(state: TPoint; action: integer): Single;
 begin
+  result := FQ[Env.change(state)][action];
+end;
+
+procedure TAgent.init;
+begin
 
 end;
 
-procedure TAgent.Init;
-var
-  states: TArray<TPoint>;
-  random_actions: TArray<TPi>;
-  act: TPi;
+procedure TAgent.SetPi(state: TPoint; const Value: TArray<Single>);
 begin
-  SetLength(random_actions, 4);
-  for var i := 0 to 3 do
-  begin
-    act.action := i;
-    act.prob := 0.25;
-    random_actions[i] := act;
-  end;
-  env.states(states);
-  for var state in states do
-    Pi[state] := random_actions;
-  Finalize(states);
-  Finalize(random_actions);
-end;
-
-procedure TAgent.SetPi(state: TPoint; const Value: TArray<TPi>);
-begin
-  FPi[env.change(state)] := Value;
+  FPi[Env.change(state)] := Value;
 end;
 
 procedure TAgent.SetQ(state: TPoint; action: integer; const Value: Single);
 begin
-
+  FQ[Env.change(state)][action] := Value;
 end;
 
 { TMcAgent }
 
-constructor TMcAgent.Create;
+procedure TMcAgent.add(state: TPoint; action: integer; reward: Single);
+var
+  data: TAgentData;
+begin
+  data.state := state;
+  data.action := action;
+  data.reward := reward;
+  memory := memory + [data];
+end;
+
+function TMcAgent.getAction(state: TPoint): integer;
+var
+  action_probs: TArray<Single>;
+  prob: Single;
+begin
+  action_probs := Pi[state];
+  prob := Random;
+  for var i := 0 to High(action_probs) do
+  begin
+    result := i;
+    if action_probs[i] > prob then
+      break
+    else
+      prob := prob - action_probs[i];
+  end;
+end;
+
+procedure TMcAgent.greedy_probs(out action_probs: TArray<Single>; Q: TAnswer;
+  state: TPoint; epsilon, action_size: integer);
+var
+  base_prob: Single;
+  max_action: integer;
+begin
+  SetLength(action_probs, action_size);;
+  base_prob := epsilon / action_size;
+  for var action := 0 to action_size - 1 do
+    action_probs[action] := base_prob;
+  action_probs[max_action] := action_probs[max_action] + 1 - epsilon;
+end;
+
+procedure TMcAgent.init;
+var
+  states: TArray<TPoint>;
+  random_actions: TArray<Single>;
+  prob: Single;
 begin
   inherited;
+  Randomize;
+  SetLength(random_actions, 4);
+  for var action := 0 to High(random_actions) do
+  begin
+    prob := 0.25;
+    random_actions[action] := prob;
+  end;
+  Env.states(states);
+  for var state in states do
+    Pi[state] := random_actions;
+  Initialize(memory);
+  Finalize(states);
+  Finalize(random_actions);
+end;
+
+procedure TMcAgent.update;
+var
+  G: Single;
+  tmp: TArray<TAgentData>;
+  tmp_q: Single;
+  action_probs: TArray<Single>;
+begin
+  G := 0;
+  Env.reversed(memory, tmp);
+  for var data in tmp do
+  begin
+    G := gamma * G + data.reward;
+    tmp_q := Q[data.state, data.action];
+    Q[data.state, data.action] := tmp_q + (G - tmp_q) * alpha;
+    greedy_probs(action_probs, FQ, data.state);
+    Pi[data.state] := Copy(action_probs, 0, Length(action_probs));
+    Finalize(action_probs);
+  end;
+  Finalize(tmp);
 end;
 
 end.
