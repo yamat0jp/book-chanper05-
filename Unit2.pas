@@ -404,14 +404,16 @@ procedure TMcAgent.init;
 var
   states: TArray<TPoint>;
   random_actions: TArray<Single>;
-  prob: Single;
 begin
   inherited;
   Randomize;
   random_actions := [0.25, 0.25, 0.25, 0.25];
   Env.states(states);
   for var state in states do
+  begin
     Pi[state] := random_actions;
+    FQ[Env.change(state)] := [0, 0, 0, 0];
+  end;
   Initialize(memory);
   Finalize(states);
   Finalize(random_actions);
