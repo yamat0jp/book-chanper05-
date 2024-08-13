@@ -60,6 +60,10 @@ object Form1: TForm1
           item
             Action = Action5
             Caption = #12514#12531#12486#12459#12523#12525'(&Z)'
+          end
+          item
+            Action = Action6
+            Caption = 'T&D'
           end>
         ActionBar = ActionToolBar1
       end>
@@ -85,6 +89,10 @@ object Form1: TForm1
     object Action5: TAction
       Caption = #12514#12531#12486#12459#12523#12525
       OnExecute = Action5Execute
+    end
+    object Action6: TAction
+      Caption = 'TD'
+      OnExecute = Action6Execute
     end
   end
 end

@@ -64,12 +64,15 @@ type
     function getAction(state: TPoint): integer;
     procedure Init;
     property cnts[state: TPoint]: integer read GetCnts write SetCnts;
-    property V[state:TPoint]: Single read GetV write SetV;
+    property V[state: TPoint]: Single read GetV write SetV;
   end;
 
-  TMcAgent = class(TRandomAgent)
+  TTdAgent = class(TRandomAgent)
+  const
+    alpha = 0.01;
   public
-
+    procedure eval(state, next_state: TPoint; reward: Single;
+      done: Boolean); overload;
   end;
 
   TAgentEnv = record
@@ -86,6 +89,7 @@ type
     Action3: TAction;
     Action4: TAction;
     Action5: TAction;
+    Action6: TAction;
     procedure FormPaint(Sender: TObject);
     procedure Action1Execute(Sender: TObject);
     procedure Action2Execute(Sender: TObject);
@@ -94,6 +98,7 @@ type
     procedure Action3Execute(Sender: TObject);
     procedure Action4Execute(Sender: TObject);
     procedure Action5Execute(Sender: TObject);
+    procedure Action6Execute(Sender: TObject);
   private
     FV, reward_map: TArray<Single>;
     action_space: TArray<integer>;
@@ -112,6 +117,7 @@ type
     { Public êÈåæ }
     Answer: TAnswer;
     agent: TRandomAgent;
+    td_agent: TTdAgent;
     function nextState(state: TPoint; action: integer): TPoint;
     function reward(state, next_state: TPoint; action: integer): Single;
     procedure evalOnestep(Pi: TAnswer; V: TArray<Single>;
@@ -241,6 +247,31 @@ begin
   FormPaint(nil);
 end;
 
+// TDñ@
+procedure TForm1.Action6Execute(Sender: TObject);
+const
+  episodes = 1000;
+var
+  state: TPoint;
+  action: integer;
+  Data: TAgentEnv;
+begin
+  for var episode := 0 to episodes do
+  begin
+    state := reset;
+    while true do
+    begin
+      action := td_agent.getAction(state);
+      Data := step(action);
+      td_agent.eval(state, Data.next_state, Data.reward, Data.done);
+      if Data.done then
+        break;
+      state := Data.next_state;
+    end;
+  end;
+  FormPaint(nil);
+end;
+
 function TForm1.argmax(d: TArray<TPi>): integer;
 var
   max_value: Single;
@@ -298,6 +329,8 @@ begin
   SetReward(wall_state, Nan);
   SetReward(Point(4, 2), -1.0);
   agent := TRandomAgent.Create;
+  td_agent := TTdAgent.Create;
+  td_agent.FV := FV;
 end;
 
 procedure TForm1.FormDestroy(Sender: TObject);
@@ -308,6 +341,7 @@ begin
   Finalize(FV);
   Answer.Free;
   agent.Free;
+  td_agent.Free;
 end;
 
 procedure TForm1.FormPaint(Sender: TObject);
@@ -750,6 +784,21 @@ end;
 procedure TRandomAgent.SetV(state: TPoint; const Value: Single);
 begin
   FV[change(state)] := Value;
+end;
+
+{ TTdAgent }
+
+procedure TTdAgent.eval(state, next_state: TPoint; reward: Single;
+  done: Boolean);
+var
+  next_V, target: Single;
+begin
+  if done then
+    next_V := 0
+  else
+    next_V := V[next_state];
+  target := reward + gamma * next_V;
+  V[state] := V[state] + (target - V[state]) * alpha;
 end;
 
 end.
