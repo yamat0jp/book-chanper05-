@@ -7,7 +7,7 @@ uses
   System.Classes, Vcl.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, System.Actions, Vcl.ActnList,
   Vcl.PlatformDefaultStyleActnCtrls, Vcl.ActnMan, Vcl.ToolWin, Vcl.ActnCtrls,
-  Vcl.StdCtrls;
+  Vcl.StdCtrls, System.Generics.Collections;
 
 type
   TAgentData = record
@@ -18,6 +18,13 @@ type
 
   TNextAgentData = record
     next_state: TPoint;
+    reward: Single;
+    done: Boolean;
+  end;
+
+  TSarsaAgentData = record
+    state: TPoint;
+    action: integer;
     reward: Single;
     done: Boolean;
   end;
@@ -59,8 +66,11 @@ type
     FPi: TAnswer;
     FQ: TAnswer;
     function argmax(d: TArray<Single>): integer;
+    procedure greedy_probs(out action_probs: TArray<Single>; state: TPoint;
+      epsilon: Single = 0.1; action_size: integer = 4);
     property Env: TGridWorld read FEnv write FEnv;
   public
+    constructor Create(env: TGridWorld);
     procedure init; virtual;
     function getAction(state: TPoint): integer; virtual;
     property Pi[state: TPoint]: TArray<Single> read GetPi write SetPi;
@@ -75,12 +85,23 @@ type
     memory: TArray<TAgentData>;
   public
     procedure init; override;
-    function getAction(state: TPoint): integer; override;
     procedure add(state: TPoint; action: integer; reward: Single);
     procedure update;
-    procedure greedy_probs(out action_probs: TArray<Single>; state: TPoint;
-      epsilon: Single = 0; action_size: integer = 4);
     procedure reset;
+  end;
+
+  TSarsaAgent = class(TAgent)
+  const
+    gamma = 0.9;
+    alpha = 0.01;
+  private
+    memory: TQueue<TSarsaAgentData>;
+  public
+    constructor Create(env: TGridWorld);
+    destructor Destroy; override;
+    procedure reset;
+    procedure update(state: TPoint; action: integer; reward: Single;
+      done: Boolean);
   end;
 
   TForm2 = class(TForm)
@@ -90,17 +111,20 @@ type
     Action1: TAction;
     RadioButton1: TRadioButton;
     RadioButton2: TRadioButton;
+    Action3: TAction;
     procedure Action2Execute(Sender: TObject);
     procedure FormPaint(Sender: TObject);
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure RadioButton1Click(Sender: TObject);
     procedure Action1Execute(Sender: TObject);
+    procedure Action3Execute(Sender: TObject);
   private
     { Private êÈåæ }
   public
     { Public êÈåæ }
     mc_agent: TMcAgent;
+    sa_agent: TSarsaAgent;
     grid_world: TGridWorld;
     render: TAgent;
   end;
@@ -150,19 +174,45 @@ begin
   Close;
 end;
 
+procedure TForm2.Action3Execute(Sender: TObject);
+const
+  episodes = 10000;
+var
+  state: TPoint;
+  action: integer;
+  data: TNextAgentData;
+begin
+  for var episode := 0 to episodes do
+  begin
+    grid_world.reset;
+    sa_agent.reset;
+    while True do
+    begin
+      action := sa_agent.getAction(state);
+      data := grid_world.step(action);
+      sa_agent.update(state, action, data.reward, data.done);
+      if data.done then
+      begin
+        sa_agent.update(data.next_state, action, Single.Nan, data.done);
+        break;
+      end;
+      state := data.next_state;
+    end;
+  end;
+end;
+
 procedure TForm2.FormCreate(Sender: TObject);
 begin
   grid_world := TGridWorld.Create;
-  mc_agent := TMcAgent.Create;
-  mc_agent.FPi := grid_world.FPi;
-  mc_agent.FQ := grid_world.FQ;
-  mc_agent.init;
+  mc_agent := TMcAgent.Create(grid_world);
+  sa_agent := TSarsaAgent.Create(grid_world);
 end;
 
 procedure TForm2.FormDestroy(Sender: TObject);
 begin
   grid_world.Free;
   mc_agent.Free;
+  sa_agent.Free;
 end;
 
 procedure TForm2.FormPaint(Sender: TObject);
@@ -343,34 +393,81 @@ begin
       result := i;
 end;
 
-function TAgent.getAction(state: TPoint): integer;
+constructor TAgent.Create(env: TGridWorld);
 begin
+  inherited Create;
+  FEnv:=env;
+  FPi := env.FPi;
+  FQ := env.FQ;
+  init;
+end;
 
+function TAgent.getAction(state: TPoint): integer;
+var
+  action_probs: TArray<Single>;
+  prob: Single;
+begin
+  action_probs := Pi[state];
+  prob := Random;
+  for var i := 0 to High(action_probs) do
+  begin
+    result := i;
+    if action_probs[i] > prob then
+      break
+    else
+      prob := prob - action_probs[i];
+  end;
 end;
 
 function TAgent.GetPi(state: TPoint): TArray<Single>;
 begin
-  result := FPi[Env.change(state)];
+  result := FPi[FEnv.change(state)];
 end;
 
 function TAgent.GetQ(state: TPoint; action: integer): Single;
 begin
-  result := FQ[Env.change(state)][action];
+  result := FQ[FEnv.change(state)][action];
+end;
+
+procedure TAgent.greedy_probs(out action_probs: TArray<Single>; state: TPoint;
+  epsilon: Single; action_size: integer);
+var
+  base_prob: Single;
+  max_action: integer;
+begin
+  SetLength(action_probs, action_size);
+  max_action := argmax(FQ[FEnv.change(state)]);
+  base_prob := epsilon / action_size;
+  for var action := 0 to action_size - 1 do
+    action_probs[action] := base_prob;
+  action_probs[max_action] := action_probs[max_action] + 1 - epsilon;
 end;
 
 procedure TAgent.init;
+var
+  states: TArray<TPoint>;
+  random_actions: TArray<Single>;
 begin
-
+  Randomize;
+  random_actions := [0.05, 0.45, 0.25, 0.25];
+  Env.states(states);
+  for var state in states do
+  begin
+    Pi[state] := random_actions;
+    FQ[FEnv.change(state)] := [0, 0, 0, 0];
+  end;
+  Finalize(states);
+  Finalize(random_actions);
 end;
 
 procedure TAgent.SetPi(state: TPoint; const Value: TArray<Single>);
 begin
-  FPi[Env.change(state)] := Value;
+  FPi[FEnv.change(state)] := Value;
 end;
 
 procedure TAgent.SetQ(state: TPoint; action: integer; const Value: Single);
 begin
-  FQ[Env.change(state)][action] := Value;
+  FQ[FEnv.change(state)][action] := Value;
 end;
 
 { TMcAgent }
@@ -385,56 +482,10 @@ begin
   memory := memory + [data];
 end;
 
-function TMcAgent.getAction(state: TPoint): integer;
-var
-  action_probs: TArray<Single>;
-  prob: Single;
-begin
-  inherited;
-  action_probs := Pi[state];
-  prob := Random;
-  for var i := 0 to High(action_probs) do
-  begin
-    result := i;
-    if action_probs[i] > prob then
-      break
-    else
-      prob := prob - action_probs[i];
-  end;
-end;
-
-procedure TMcAgent.greedy_probs(out action_probs: TArray<Single>; state: TPoint;
-  epsilon: Single; action_size: integer);
-var
-  base_prob: Single;
-  max_action: integer;
-begin
-  epsilon := 0.3;
-  SetLength(action_probs, action_size);
-  max_action:=argmax(FQ[env.change(state)]);
-  base_prob := epsilon / action_size;
-  for var action := 0 to action_size - 1 do
-    action_probs[action] := base_prob;
-  action_probs[max_action] := action_probs[max_action] + 1 - epsilon;
-end;
-
 procedure TMcAgent.init;
-var
-  states: TArray<TPoint>;
-  random_actions: TArray<Single>;
 begin
   inherited;
-  Randomize;
-  random_actions := [0.05, 0.45, 0.25, 0.25];
-  Env.states(states);
-  for var state in states do
-  begin
-    Pi[state] := random_actions;
-    FQ[Env.change(state)] := [0, 0, 0, 0];
-  end;
   Initialize(memory);
-  Finalize(states);
-  Finalize(random_actions);
 end;
 
 procedure TMcAgent.reset;
@@ -461,6 +512,50 @@ begin
     Finalize(action_probs);
   end;
   Finalize(tmp);
+end;
+
+{ TSarsaAgent }
+
+constructor TSarsaAgent.Create(env: TGridWorld);
+begin
+  inherited;
+  memory := TQueue<TSarsaAgentData>.Create;
+  memory.Capacity := 2;
+end;
+
+destructor TSarsaAgent.Destroy;
+begin
+  memory.Free;
+  inherited;
+end;
+
+procedure TSarsaAgent.reset;
+begin
+  memory.Clear;
+end;
+
+procedure TSarsaAgent.update(state: TPoint; action: integer; reward: Single;
+  done: Boolean);
+var
+  data, next_data: TSarsaAgentData;
+  next_q, target: Single;
+begin
+  data.state := state;
+  data.action := action;
+  data.reward := reward;
+  data.done := done;
+  memory.Enqueue(data);
+  if memory.Count < 2 then
+    Exit;
+  data := memory.Dequeue;
+  next_data := memory.Dequeue;
+  if done then
+    next_q := 0
+  else
+    next_q := Q[next_data.state, next_data.action];
+  target := reward + gamma * next_q;
+  Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
+  greedy_probs(FPi[FEnv.change(state)], state, epsilon);
 end;
 
 end.
