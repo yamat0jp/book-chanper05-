@@ -45,6 +45,7 @@ type
     function nextState(state: TPoint; action: integer): TPoint;
     function step(action: integer): TNextAgentData;
     function reward(state, next_state: TPoint; action: integer): Single;
+    procedure reset;
   end;
 
   TAgent = class
@@ -78,6 +79,7 @@ type
     procedure update;
     procedure greedy_probs(out action_probs: TArray<Single>; state: TPoint;
       epsilon: integer = 0; action_size: integer = 4);
+    procedure reset;
   end;
 
   TForm2 = class(TForm)
@@ -121,8 +123,8 @@ var
 begin
   for var episode := 1 to episodes do
   begin
-    grid_world.init;
-    mc_agent.init;
+    grid_world.reset;
+    mc_agent.reset;
     state := grid_world.agent_state;
 
     while True do
@@ -249,6 +251,7 @@ begin
     Finalize(FQ[i]);
   end;
   Finalize(FPi);
+  Finalize(FQ);
   Finalize(action_space);
   Finalize(action_meaning);
   Finalize(reward_map);
@@ -283,6 +286,11 @@ begin
     result := state
   else if result = wall_state then
     result := state;
+end;
+
+procedure TGridWorld.reset;
+begin
+  agent_state := start_state;
 end;
 
 procedure TGridWorld.reversed(din, dout: TArray<TAgentData>);
@@ -417,6 +425,11 @@ begin
   Initialize(memory);
   Finalize(states);
   Finalize(random_actions);
+end;
+
+procedure TMcAgent.reset;
+begin
+  Initialize(memory);
 end;
 
 procedure TMcAgent.update;
