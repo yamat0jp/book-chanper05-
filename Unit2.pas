@@ -41,7 +41,7 @@ type
     procedure init;
     procedure states(out d: TArray<TPoint>);
     function change(state: TPoint): integer;
-    procedure reversed(din, dout: TArray<TAgentData>);
+    procedure reversed(din: TArray<TAgentData>; out dout: TArray<TAgentData>);
     function nextState(state: TPoint; action: integer): TPoint;
     function step(action: integer): TNextAgentData;
     function reward(state, next_state: TPoint; action: integer): Single;
@@ -58,6 +58,7 @@ type
   protected
     FPi: TAnswer;
     FQ: TAnswer;
+    function argmax(d: TArray<Single>): integer;
     property Env: TGridWorld read FEnv write FEnv;
   public
     procedure init; virtual;
@@ -78,7 +79,7 @@ type
     procedure add(state: TPoint; action: integer; reward: Single);
     procedure update;
     procedure greedy_probs(out action_probs: TArray<Single>; state: TPoint;
-      epsilon: integer = 0; action_size: integer = 4);
+      epsilon: Single = 0; action_size: integer = 4);
     procedure reset;
   end;
 
@@ -172,6 +173,7 @@ var
   states: TArray<TPoint>;
   p: TPoint;
   probs: TArray<Single>;
+  action: integer;
 begin
   Canvas.FillRect(ClientRect);
   for var i := 1 to grid_world.wid + 1 do
@@ -213,8 +215,11 @@ begin
   begin
     grid_world.states(states);
     for var state in states do
+    begin
+      action := mc_agent.argmax(mc_agent.Pi[state]);
       Canvas.TextOut(state.X * size + size div 2, state.Y * size + size div 2,
-        grid_world.action_meaning[0]);
+        grid_world.action_meaning[action]);
+    end;
     Finalize(states);
   end;
   p := grid_world.wall_state;
@@ -293,7 +298,8 @@ begin
   agent_state := start_state;
 end;
 
-procedure TGridWorld.reversed(din, dout: TArray<TAgentData>);
+procedure TGridWorld.reversed(din: TArray<TAgentData>;
+  out dout: TArray<TAgentData>);
 begin
   dout := [];
   for var data in din do
@@ -319,12 +325,23 @@ var
 begin
   state := agent_state;
   next_state := nextState(state, action);
+  agent_state := next_state;
   result.next_state := next_state;
   result.reward := reward(state, next_state, action);
-  result.done := result.next_state = goal_state;
+  result.done := agent_state = goal_state;
 end;
 
 { TAgent }
+
+function TAgent.argmax(d: TArray<Single>): integer;
+var
+  max: Single;
+begin
+  max := MaxValue(d);
+  for var i := 0 to High(d) do
+    if d[i] = max then
+      result := i;
+end;
 
 function TAgent.getAction(state: TPoint): integer;
 begin
@@ -387,21 +404,14 @@ begin
 end;
 
 procedure TMcAgent.greedy_probs(out action_probs: TArray<Single>; state: TPoint;
-  epsilon, action_size: integer);
+  epsilon: Single; action_size: integer);
 var
-  base_prob, max: Single;
+  base_prob: Single;
   max_action: integer;
-  qs: TArray<Single>;
 begin
-  qs := [];
-  for var action := 0 to action_size - 1 do
-    qs := qs + [Q[state, action]];
-  max := MaxValue(qs);
-  for var i := 0 to action_size - 1 do
-    if qs[i] = max then
-      max_action := i;
-  Finalize(qs);
-  SetLength(action_probs, action_size);;
+  epsilon := 0.3;
+  SetLength(action_probs, action_size);
+  max_action:=argmax(FQ[env.change(state)]);
   base_prob := epsilon / action_size;
   for var action := 0 to action_size - 1 do
     action_probs[action] := base_prob;
@@ -415,7 +425,7 @@ var
 begin
   inherited;
   Randomize;
-  random_actions := [0.25, 0.25, 0.25, 0.25];
+  random_actions := [0.05, 0.45, 0.25, 0.25];
   Env.states(states);
   for var state in states do
   begin
