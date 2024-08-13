@@ -16,6 +16,12 @@ type
     reward: Single;
   end;
 
+  TNextAgentData = record
+    next_state: TPoint;
+    reward: Single;
+    done: Boolean;
+  end;
+
   TAnswer = TArray<TArray<Single>>;
 
   TGridWorld = class
@@ -36,6 +42,9 @@ type
     procedure states(out d: TArray<TPoint>);
     function change(state: TPoint): integer;
     procedure reversed(din, dout: TArray<TAgentData>);
+    function nextState(state: TPoint; action: integer): TPoint;
+    function step(action: integer): TNextAgentData;
+    function reward(state, next_state: TPoint; action: integer): Single;
   end;
 
   TAgent = class
@@ -67,8 +76,8 @@ type
     function getAction(state: TPoint): integer; override;
     procedure add(state: TPoint; action: integer; reward: Single);
     procedure update;
-    procedure greedy_probs(out action_probs: TArray<Single>; Q: TAnswer;
-      state: TPoint; epsilon: integer = 0; action_size: integer = 4);
+    procedure greedy_probs(out action_probs: TArray<Single>; state: TPoint;
+      epsilon: integer = 0; action_size: integer = 4);
   end;
 
   TForm2 = class(TForm)
@@ -83,6 +92,7 @@ type
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure RadioButton1Click(Sender: TObject);
+    procedure Action1Execute(Sender: TObject);
   private
     { Private êÈåæ }
   public
@@ -101,6 +111,37 @@ implementation
 
 uses Math, Types;
 
+procedure TForm2.Action1Execute(Sender: TObject);
+const
+  episodes = 10000;
+var
+  state: TPoint;
+  action: integer;
+  data: TNextAgentData;
+begin
+  for var episode := 1 to episodes do
+  begin
+    grid_world.init;
+    mc_agent.init;
+    state := grid_world.agent_state;
+
+    while True do
+    begin
+      action := mc_agent.getAction(state);
+      data := grid_world.step(action);
+
+      mc_agent.add(state, action, data.reward);
+      if data.done then
+      begin
+        mc_agent.update;
+        break;
+      end;
+      state := data.next_state;
+    end;
+  end;
+  FormPaint(nil);
+end;
+
 procedure TForm2.Action2Execute(Sender: TObject);
 begin
   Close;
@@ -111,6 +152,7 @@ begin
   grid_world := TGridWorld.Create;
   mc_agent := TMcAgent.Create;
   mc_agent.FPi := grid_world.FPi;
+  mc_agent.FQ := grid_world.FQ;
   mc_agent.init;
 end;
 
@@ -127,6 +169,7 @@ const
 var
   states: TArray<TPoint>;
   p: TPoint;
+  probs: TArray<Single>;
 begin
   Canvas.FillRect(ClientRect);
   for var i := 1 to grid_world.wid + 1 do
@@ -151,17 +194,17 @@ begin
       end;
     grid_world.states(states);
     for var state in states do
-      for var prob in mc_agent.Pi[state] do
-      begin
-        Canvas.TextOut(state.X * size + size div 2, state.Y * size + margin,
-          prob.ToString);
-        Canvas.TextOut(state.X * size + size div 2, (state.Y + 1) * size - 2 *
-          margin, prob.ToString);
-        Canvas.TextOut(state.X * size + margin, state.Y * size + size div 2,
-          prob.ToString);
-        Canvas.TextOut((state.X + 1) * size - 2 * margin,
-          state.Y * size + size div 2, prob.ToString);
-      end;
+    begin
+      probs := mc_agent.Pi[state];
+      Canvas.TextOut(state.X * size + margin, state.Y * size + size div 2,
+        probs[0].ToString(ffFixed, 5, 2));
+      Canvas.TextOut((state.X + 1) * size - 2 * margin,
+        state.Y * size + size div 2, probs[1].ToString(ffFixed, 5, 2));
+      Canvas.TextOut(state.X * size + size div 2, state.Y * size + margin,
+        probs[2].ToString(ffFixed, 5, 2));
+      Canvas.TextOut(state.X * size + size div 2, (state.Y + 1) * size - 2 *
+        margin, probs[3].ToString(ffFixed, 5, 2));
+    end;
     Finalize(states);
   end
   else
@@ -193,6 +236,7 @@ end;
 constructor TGridWorld.Create;
 begin
   SetLength(FPi, wid * hei);
+  SetLength(FQ, wid * hei);
   SetLength(reward_map, wid * hei);
   init;
 end;
@@ -200,7 +244,10 @@ end;
 destructor TGridWorld.Destroy;
 begin
   for var i := 0 to wid * hei - 1 do
+  begin
     Finalize(FPi[i]);
+    Finalize(FQ[i]);
+  end;
   Finalize(FPi);
   Finalize(action_space);
   Finalize(action_meaning);
@@ -211,7 +258,7 @@ end;
 procedure TGridWorld.init;
 begin
   action_space := [0, 1, 2, 3];
-  action_meaning := ['Å™', 'Å´', 'Å©', 'Å®'];
+  action_meaning := ['Å©', 'Å®', 'Å™', 'Å´'];
   for var i := 0 to High(reward_map) do
     reward_map[i] := 0;
   goal_state := Point(4, 1);
@@ -223,11 +270,31 @@ begin
   reward_map[change(wall_state)] := Nan;
 end;
 
+function TGridWorld.nextState(state: TPoint; action: integer): TPoint;
+var
+  action_move_map: TArray<TPoint>;
+  move: TPoint;
+begin
+  action_move_map := [Point(-1, 0), Point(1, 0), Point(0, -1), Point(0, 1)];
+  move := action_move_map[action];
+  result := Point(state.X + move.X, state.Y + move.Y);
+  if (result.X < 1) or (result.X > wid) or (result.Y < 1) or (result.Y > hei)
+  then
+    result := state
+  else if result = wall_state then
+    result := state;
+end;
+
 procedure TGridWorld.reversed(din, dout: TArray<TAgentData>);
 begin
   dout := [];
   for var data in din do
     dout := [data] + dout;
+end;
+
+function TGridWorld.reward(state, next_state: TPoint; action: integer): Single;
+begin
+  result := reward_map[change(next_state)];
 end;
 
 procedure TGridWorld.states(out d: TArray<TPoint>);
@@ -236,6 +303,17 @@ begin
   for var j := 0 to hei - 1 do
     for var i := 0 to wid - 1 do
       d := d + [Point(i + 1, j + 1)];
+end;
+
+function TGridWorld.step(action: integer): TNextAgentData;
+var
+  state, next_state: TPoint;
+begin
+  state := agent_state;
+  next_state := nextState(state, action);
+  result.next_state := next_state;
+  result.reward := reward(state, next_state, action);
+  result.done := result.next_state = goal_state;
 end;
 
 { TAgent }
@@ -287,6 +365,7 @@ var
   action_probs: TArray<Single>;
   prob: Single;
 begin
+  inherited;
   action_probs := Pi[state];
   prob := Random;
   for var i := 0 to High(action_probs) do
@@ -299,12 +378,21 @@ begin
   end;
 end;
 
-procedure TMcAgent.greedy_probs(out action_probs: TArray<Single>; Q: TAnswer;
-  state: TPoint; epsilon, action_size: integer);
+procedure TMcAgent.greedy_probs(out action_probs: TArray<Single>; state: TPoint;
+  epsilon, action_size: integer);
 var
-  base_prob: Single;
+  base_prob, max: Single;
   max_action: integer;
+  qs: TArray<Single>;
 begin
+  qs := [];
+  for var action := 0 to action_size - 1 do
+    qs := qs + [Q[state, action]];
+  max := MaxValue(qs);
+  for var i := 0 to action_size - 1 do
+    if qs[i] = max then
+      max_action := i;
+  Finalize(qs);
   SetLength(action_probs, action_size);;
   base_prob := epsilon / action_size;
   for var action := 0 to action_size - 1 do
@@ -320,12 +408,7 @@ var
 begin
   inherited;
   Randomize;
-  SetLength(random_actions, 4);
-  for var action := 0 to High(random_actions) do
-  begin
-    prob := 0.25;
-    random_actions[action] := prob;
-  end;
+  random_actions := [0.25, 0.25, 0.25, 0.25];
   Env.states(states);
   for var state in states do
     Pi[state] := random_actions;
@@ -348,7 +431,7 @@ begin
     G := gamma * G + data.reward;
     tmp_q := Q[data.state, data.action];
     Q[data.state, data.action] := tmp_q + (G - tmp_q) * alpha;
-    greedy_probs(action_probs, FQ, data.state);
+    greedy_probs(action_probs, data.state);
     Pi[data.state] := Copy(action_probs, 0, Length(action_probs));
     Finalize(action_probs);
   end;

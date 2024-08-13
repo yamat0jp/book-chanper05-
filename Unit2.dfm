@@ -69,6 +69,10 @@ object Form2: TForm2
           item
             Action = Action2
             Caption = '&Close'
+          end
+          item
+            Action = Action1
+            Caption = '&McAgent'
           end>
         ActionBar = ActionToolBar1
       end>
@@ -80,7 +84,8 @@ object Form2: TForm2
       OnExecute = Action2Execute
     end
     object Action1: TAction
-      Caption = 'Q'
+      Caption = 'McAgent'
+      OnExecute = Action1Execute
     end
   end
 end
