@@ -364,7 +364,7 @@ begin
   agent_state := start_state;
   reward_map[change(goal_state)] := 1.0;
   reward_map[change(Point(4, 2))] := -1.0;
-  reward_map[change(wall_state)] := Nan;
+  reward_map[change(wall_state)] := NaN;
 end;
 
 function TGridWorld.nextState(state: TPoint; action: integer): TPoint;
@@ -666,6 +666,7 @@ begin
   target := rho * (reward + gamma * next_q);
   Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
   greedy_probs(FPi[Env.change(state)], state);
+  greedy_probs(Fb[Env.change(state)], state);
 end;
 
 end.
