@@ -108,9 +108,10 @@ type
 
   TSarsaOffPolicyAgent = class(TSarsaAgent)
   private
-    Fb: TAnswer;
     function GetB(state: TPoint): TArray<Single>;
     procedure SetB(state: TPoint; const Value: TArray<Single>);
+  protected
+    Fb: TAnswer;
   public
     constructor Create(Env: TGridWorld);
     destructor Destroy; override;
@@ -118,6 +119,12 @@ type
     procedure update(state: TPoint; action: integer; reward: Single;
       done: Boolean); override;
     property b[state: TPoint]: TArray<Single> read GetB write SetB;
+  end;
+
+  TQLearnAgent = class(TSarsaOffPolicyAgent)
+  public
+    procedure update(state: TPoint; action: integer; reward: Single;
+      done: Boolean); override;
   end;
 
   TForm2 = class(TForm)
@@ -129,6 +136,7 @@ type
     RadioButton2: TRadioButton;
     Action3: TAction;
     Action4: TAction;
+    Action5: TAction;
     procedure Action2Execute(Sender: TObject);
     procedure FormPaint(Sender: TObject);
     procedure FormCreate(Sender: TObject);
@@ -136,6 +144,7 @@ type
     procedure RadioButton1Click(Sender: TObject);
     procedure Action1Execute(Sender: TObject);
     procedure Action3Execute(Sender: TObject);
+    procedure Action5Execute(Sender: TObject);
   private
     { Private êÈåæ }
   public
@@ -143,6 +152,7 @@ type
     mc_agent: TMcAgent;
     sa_agent: TSarsaAgent;
     saoff_agent: TSarsaOffPolicyAgent;
+    qlearn_agent: TQLearnAgent;
     grid_world: TGridWorld;
     render: TAgent;
   end;
@@ -229,12 +239,39 @@ begin
   FormPaint(nil);
 end;
 
+procedure TForm2.Action5Execute(Sender: TObject);
+const
+  episodes = 10000;
+var
+  state: TPoint;
+  action: integer;
+  data: TNextAgentData;
+begin
+  qlearn_agent.init;
+  for var episode := 1 to episodes do
+  begin
+    grid_world.reset;
+    state := grid_world.agent_state;
+    while True do
+    begin
+      action := qlearn_agent.getAction(state);
+      data := grid_world.step(action);
+      qlearn_agent.update(state, action, data.reward, data.done);
+      if data.done then
+        break;
+      state := data.next_state;
+    end;
+  end;
+  FormPaint(nil);
+end;
+
 procedure TForm2.FormCreate(Sender: TObject);
 begin
   grid_world := TGridWorld.Create;
   mc_agent := TMcAgent.Create(grid_world);
   sa_agent := TSarsaAgent.Create(grid_world);
   saoff_agent := TSarsaOffPolicyAgent.Create(grid_world);
+  qlearn_agent := TQLearnAgent.Create(grid_world);
 end;
 
 procedure TForm2.FormDestroy(Sender: TObject);
@@ -243,6 +280,7 @@ begin
   mc_agent.Free;
   sa_agent.Free;
   saoff_agent.Free;
+  qlearn_agent.Free;
 end;
 
 procedure TForm2.FormPaint(Sender: TObject);
@@ -609,6 +647,8 @@ end;
 
 destructor TSarsaOffPolicyAgent.Destroy;
 begin
+  for var i := 0 to High(Fb) do
+    Finalize(Fb[i]);
   Finalize(Fb);
   inherited;
 end;
@@ -665,7 +705,28 @@ begin
   end;
   target := rho * (reward + gamma * next_q);
   Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
-  greedy_probs(FPi[Env.change(state)], state);
+  greedy_probs(FPi[Env.change(state)], state); // eps: 0
+  greedy_probs(Fb[Env.change(state)], state);
+end;
+
+{ TQLearnAgent }
+
+procedure TQLearnAgent.update(state: TPoint; action: integer; reward: Single;
+  done: Boolean);
+var
+  next_q, next_q_max, target: Single;
+  next_qs: TArray<Single>;
+begin
+  if done then
+    next_q_max := 0
+  else
+  begin
+    next_qs := FQ[Env.change(state)];
+    next_q_max := MaxValue(next_qs);
+  end;
+  target := reward + gamma * next_q_max;
+  Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
+  greedy_probs(FPi[Env.change(state)], state); // eps: 0
   greedy_probs(Fb[Env.change(state)], state);
 end;
 

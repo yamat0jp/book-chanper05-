@@ -81,6 +81,10 @@ object Form2: TForm2
           item
             Action = Action4
             Caption = '&OffPolicy'
+          end
+          item
+            Action = Action5
+            Caption = '&QLearning'
           end>
         ActionBar = ActionToolBar1
       end>
@@ -102,6 +106,10 @@ object Form2: TForm2
     object Action4: TAction
       Caption = 'OffPolicy'
       OnExecute = Action3Execute
+    end
+    object Action5: TAction
+      Caption = 'QLearning'
+      OnExecute = Action5Execute
     end
   end
 end
