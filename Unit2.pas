@@ -127,6 +127,13 @@ type
       done: Boolean); override;
   end;
 
+  TQLearningAgent = class(TQLearnAgent)
+  public
+    function getAction(state: TPoint): integer; override;
+    procedure update(state: TPoint; action: integer; reward: Single;
+      done: Boolean); override;
+  end;
+
   TForm2 = class(TForm)
     ActionManager1: TActionManager;
     Action2: TAction;
@@ -153,6 +160,7 @@ type
     sa_agent: TSarsaAgent;
     saoff_agent: TSarsaOffPolicyAgent;
     qlearn_agent: TQLearnAgent;
+    qlearn2_agent: TQLearningAgent;
     grid_world: TGridWorld;
     render: TAgent;
   end;
@@ -247,16 +255,16 @@ var
   action: integer;
   data: TNextAgentData;
 begin
-  qlearn_agent.init;
+  qlearn2_agent.init;
   for var episode := 1 to episodes do
   begin
     grid_world.reset;
     state := grid_world.agent_state;
     while True do
     begin
-      action := qlearn_agent.getAction(state);
+      action := qlearn2_agent.getAction(state);
       data := grid_world.step(action);
-      qlearn_agent.update(state, action, data.reward, data.done);
+      qlearn2_agent.update(state, action, data.reward, data.done);
       if data.done then
         break;
       state := data.next_state;
@@ -272,6 +280,7 @@ begin
   sa_agent := TSarsaAgent.Create(grid_world);
   saoff_agent := TSarsaOffPolicyAgent.Create(grid_world);
   qlearn_agent := TQLearnAgent.Create(grid_world);
+  qlearn2_agent := TQLearningAgent.Create(grid_world);
 end;
 
 procedure TForm2.FormDestroy(Sender: TObject);
@@ -714,7 +723,7 @@ end;
 procedure TQLearnAgent.update(state: TPoint; action: integer; reward: Single;
   done: Boolean);
 var
-  next_q, next_q_max, target: Single;
+  next_q_max, target: Single;
   next_qs: TArray<Single>;
 begin
   if done then
@@ -727,6 +736,49 @@ begin
   target := reward + gamma * next_q_max;
   Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
   greedy_probs(FPi[Env.change(state)], state); // eps: 0
+  greedy_probs(Fb[Env.change(state)], state);
+end;
+
+{ TQLearningAgent }
+
+function TQLearningAgent.getAction(state: TPoint): integer;
+var
+  probs: TArray<Single>;
+  p: Single;
+begin
+  if Random < 0.1 then
+  begin
+    probs := [0.25, 0.25, 0.25, 0.25];
+    p := Random;
+    result := 0;
+    for var prob in probs do
+    begin
+      if p < prob then
+        break;
+      inc(result);
+      p := p - prob;
+    end;
+    Finalize(probs);
+  end
+  else
+    result := inherited;
+end;
+
+procedure TQLearningAgent.update(state: TPoint; action: integer; reward: Single;
+  done: Boolean);
+var
+  next_q_max, target: Single;
+  next_qs: TArray<Single>;
+begin
+  if done then
+    next_q_max := 0
+  else
+  begin
+    next_qs := FQ[Env.change(state)];
+    next_q_max := MaxValue(next_qs);
+  end;
+  target := reward + gamma * next_q_max;
+  Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
   greedy_probs(Fb[Env.change(state)], state);
 end;
 
