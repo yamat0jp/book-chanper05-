@@ -49,7 +49,7 @@ object Form2: TForm2
     Top = 48
     Width = 113
     Height = 17
-    Caption = 'action_probs'
+    Caption = 'action_reward'
     Checked = True
     TabOrder = 2
     TabStop = True
@@ -77,6 +77,10 @@ object Form2: TForm2
           item
             Action = Action3
             Caption = '&Sarsa'
+          end
+          item
+            Action = Action4
+            Caption = '&OffPolicy'
           end>
         ActionBar = ActionToolBar1
       end>
@@ -93,6 +97,10 @@ object Form2: TForm2
     end
     object Action3: TAction
       Caption = 'Sarsa'
+      OnExecute = Action3Execute
+    end
+    object Action4: TAction
+      Caption = 'OffPolicy'
       OnExecute = Action3Execute
     end
   end
