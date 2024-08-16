@@ -116,6 +116,7 @@ type
     constructor Create(Env: TGridWorld);
     destructor Destroy; override;
     procedure init; override;
+    function getAction(state: TPoint): integer; override;
     procedure update(state: TPoint; action: integer; reward: Single;
       done: Boolean); override;
     property b[state: TPoint]: TArray<Single> read GetB write SetB;
@@ -664,6 +665,23 @@ begin
   inherited;
 end;
 
+function TSarsaOffPolicyAgent.getAction(state: TPoint): integer;
+var
+  action_probs: TArray<Single>;
+  prob: Single;
+begin
+  action_probs := b[state];
+  prob := Random;
+  for var i := 0 to High(action_probs) do
+  begin
+    result := i;
+    if action_probs[i] > prob then
+      break
+    else
+      prob := prob - action_probs[i];
+  end;
+end;
+
 function TSarsaOffPolicyAgent.GetB(state: TPoint): TArray<Single>;
 begin
   result := Fb[Env.change(state)];
@@ -716,7 +734,7 @@ begin
   end;
   target := rho * (reward + gamma * next_q);
   Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
-  greedy_probs(FPi[Env.change(state)], state); // epsilon: 0
+  greedy_probs(FPi[Env.change(state)], state, 0);
   greedy_probs(Fb[Env.change(state)], state);
 end;
 
@@ -737,7 +755,7 @@ begin
   end;
   target := reward + gamma * next_q_max;
   Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
-  greedy_probs(FPi[Env.change(state)], state); // epsilon: 0
+  greedy_probs(FPi[Env.change(state)], state, 0);
   greedy_probs(Fb[Env.change(state)], state);
 end;
 
