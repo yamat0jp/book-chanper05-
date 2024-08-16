@@ -266,6 +266,7 @@ begin
   for var episode := 1 to episodes do
   begin
     grid_world.reset;
+    agent.reset;
     state := grid_world.agent_state;
     while True do
     begin
@@ -409,8 +410,8 @@ begin
   for var i := 0 to High(reward_map) do
   begin
     reward_map[i] := 0;
-    FPi[i] := [0.0, 0.0, 0.0, 0.0];
-    FQ[i] := [0.0, 0.0, 0.0, 0.0];
+    SetLength(FPi[i], 4);
+    SetLength(FQ[i], 4);
   end;
   goal_state := Point(4, 1);
   wall_state := Point(2, 2);
@@ -537,20 +538,16 @@ end;
 procedure TAgent.init;
 var
   states: TArray<TPoint>;
-  random_actions, ini: TArray<Single>;
 begin
   Randomize;
-  random_actions := [0.25, 0.25, 0.25, 0.25];
-  ini := [0.0, 0.0, 0.0, 0.0];
   Env.states(states);
   for var state in states do
   begin
-    Pi[state] := random_actions;
-    FQ[Env.change(state)] := Copy(ini, 0, Length(ini));
+    Pi[state] := [0.25, 0.25, 0.25, 0.25];
+    for var action := 0 to High(Env.action_space) do
+      Q[state, action] := 0.0;
   end;
   Finalize(states);
-  Finalize(random_actions);
-  Finalize(ini);
 end;
 
 procedure TAgent.SetPi(state: TPoint; const Value: TArray<Single>);
@@ -693,7 +690,7 @@ var
   ini: TArray<Single>;
 begin
   inherited;
-  ini := [0, 0, 0, 0];
+  ini := [2.5, 2.5, 2.5, 2.5];
   Env.states(states);
   for var state in states do
     b[state] := ini;
