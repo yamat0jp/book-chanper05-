@@ -597,7 +597,7 @@ begin
     G := gamma * G + data.reward;
     tmp_q := Q[data.state, data.action];
     Q[data.state, data.action] := tmp_q + (G - tmp_q) * alpha;
-    greedy_probs(FPi[Env.change(data.state)], data.state);
+    greedy_probs(Pi[data.state], data.state);
   end;
   Finalize(tmp);
 end;
@@ -643,7 +643,7 @@ begin
     next_q := Q[next_data.state, next_data.action];
   target := reward + gamma * next_q;
   Q[data.state, data.action] := Q[data.state, data.action] + (target - Q[data.state, data.action]) * alpha;
-  greedy_probs(FPi[Env.change(data.state)], data.state);
+  greedy_probs(Pi[data.state], data.state);
 end;
 
 { TSaraOffPolicyAgent }
@@ -731,8 +731,8 @@ begin
   end;
   target := rho * (reward + gamma * next_q);
   Q[data.state, data.action] := Q[data.state, data.action] + (target - Q[data.state, data.action]) * alpha;
-  greedy_probs(FPi[Env.change(data.state)], data.state, 0);
-  greedy_probs(Fb[Env.change(data.state)], data.state);
+  greedy_probs(Pi[data.state], data.state, 0);
+  greedy_probs(b[data.state], data.state);
 end;
 
 { TQLearnAgent }
@@ -752,8 +752,8 @@ begin
   end;
   target := reward + gamma * next_q_max;
   Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
-  greedy_probs(FPi[Env.change(state)], state, 0);
-  greedy_probs(Fb[Env.change(state)], state);
+  greedy_probs(Pi[state], state, 0);
+  greedy_probs(b[state], state);
 end;
 
 { TQLearningAgent }
@@ -796,7 +796,7 @@ begin
   end;
   target := reward + gamma * next_q_max;
   Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
-  greedy_probs(FPi[env.change(state)], state);
+  greedy_probs(Pi[state], state);
 end;
 
 end.
