@@ -68,7 +68,7 @@ type
     FPi: TAnswer;
     FQ: TAnswer;
     function argmax(d: TArray<Single>): integer;
-    procedure greedy_probs(out action_probs: TArray<Single>; state: TPoint;
+    procedure greedy_probs(action_probs: TArray<Single>; state: TPoint;
       epsilon: Single = 0.1; action_size: integer = 4);
     property Env: TGridWorld read FEnv write FEnv;
   public
@@ -144,6 +144,7 @@ type
     Action3: TAction;
     Action4: TAction;
     Action5: TAction;
+    Action6: TAction;
     procedure Action2Execute(Sender: TObject);
     procedure FormPaint(Sender: TObject);
     procedure FormCreate(Sender: TObject);
@@ -254,17 +255,22 @@ var
   state: TPoint;
   action: integer;
   data: TNextAgentData;
+  agent: TQLearnAgent;
 begin
-  qlearn2_agent.init;
+  if Sender = Action5 then
+    agent := qlearn_agent
+  else
+    agent := qlearn2_agent;
+  agent.init;
   for var episode := 1 to episodes do
   begin
     grid_world.reset;
     state := grid_world.agent_state;
     while True do
     begin
-      action := qlearn2_agent.getAction(state);
+      action := agent.getAction(state);
       data := grid_world.step(action);
-      qlearn2_agent.update(state, action, data.reward, data.done);
+      agent.update(state, action, data.reward, data.done);
       if data.done then
         break;
       state := data.next_state;
@@ -290,6 +296,7 @@ begin
   sa_agent.Free;
   saoff_agent.Free;
   qlearn_agent.Free;
+  qlearn2_agent.Free;
 end;
 
 procedure TForm2.FormPaint(Sender: TObject);
@@ -299,7 +306,6 @@ const
 var
   states: TArray<TPoint>;
   p: TPoint;
-  rewards: TArray<Single>;
   action: integer;
 begin
   Canvas.FillRect(ClientRect);
@@ -326,15 +332,15 @@ begin
     grid_world.states(states);
     for var state in states do
     begin
-      rewards := grid_world.FQ[grid_world.change(state)];
       Canvas.TextOut(state.X * size + margin, state.Y * size + size div 2,
-        rewards[0].ToString(ffFixed, 5, 2));
+        mc_agent.Q[state, 0].ToString(ffFixed, 5, 2));
       Canvas.TextOut((state.X + 1) * size - 2 * margin,
-        state.Y * size + size div 2, rewards[1].ToString(ffFixed, 5, 2));
+        state.Y * size + size div 2,
+        mc_agent.Q[state, 1].ToString(ffFixed, 5, 2));
       Canvas.TextOut(state.X * size + size div 2, state.Y * size + margin,
-        rewards[2].ToString(ffFixed, 5, 2));
+        mc_agent.Q[state, 2].ToString(ffFixed, 5, 2));
       Canvas.TextOut(state.X * size + size div 2, (state.Y + 1) * size - 2 *
-        margin, rewards[3].ToString(ffFixed, 5, 2));
+        margin, mc_agent.Q[state, 3].ToString(ffFixed, 5, 2));
     end;
     Finalize(states);
   end
@@ -514,13 +520,12 @@ begin
   result := FQ[Env.change(state)][action];
 end;
 
-procedure TAgent.greedy_probs(out action_probs: TArray<Single>; state: TPoint;
+procedure TAgent.greedy_probs(action_probs: TArray<Single>; state: TPoint;
   epsilon: Single; action_size: integer);
 var
   base_prob: Single;
   max_action: integer;
 begin
-  SetLength(action_probs, action_size);
   max_action := argmax(FQ[Env.change(state)]);
   base_prob := epsilon / action_size;
   for var action := 0 to action_size - 1 do
@@ -534,7 +539,7 @@ var
   random_actions, ini: TArray<Single>;
 begin
   Randomize;
-  random_actions := [0.05, 0.45, 0.25, 0.25];
+  random_actions := [0.25, 0.25, 0.25, 0.25];
   ini := [0.0, 0.0, 0.0, 0.0];
   Env.states(states);
   for var state in states do
@@ -586,7 +591,6 @@ var
   G: Single;
   tmp: TArray<TAgentData>;
   tmp_q: Single;
-  action_probs: TArray<Single>;
 begin
   G := 0;
   Env.reversed(memory, tmp);
@@ -595,9 +599,7 @@ begin
     G := gamma * G + data.reward;
     tmp_q := Q[data.state, data.action];
     Q[data.state, data.action] := tmp_q + (G - tmp_q) * alpha;
-    greedy_probs(action_probs, data.state);
-    Pi[data.state] := Copy(action_probs, 0, Length(action_probs));
-    Finalize(action_probs);
+    greedy_probs(FPi[Env.change(data.state)], data.state);
   end;
   Finalize(tmp);
 end;
@@ -714,7 +716,7 @@ begin
   end;
   target := rho * (reward + gamma * next_q);
   Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
-  greedy_probs(FPi[Env.change(state)], state); // eps: 0
+  greedy_probs(FPi[Env.change(state)], state); // epsilon: 0
   greedy_probs(Fb[Env.change(state)], state);
 end;
 
@@ -735,7 +737,7 @@ begin
   end;
   target := reward + gamma * next_q_max;
   Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
-  greedy_probs(FPi[Env.change(state)], state); // eps: 0
+  greedy_probs(FPi[Env.change(state)], state); // epsilon: 0
   greedy_probs(Fb[Env.change(state)], state);
 end;
 
@@ -779,7 +781,6 @@ begin
   end;
   target := reward + gamma * next_q_max;
   Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
-  greedy_probs(Fb[Env.change(state)], state);
 end;
 
 end.
