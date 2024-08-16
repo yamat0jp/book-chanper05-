@@ -124,14 +124,14 @@ type
 
   TQLearnAgent = class(TSarsaOffPolicyAgent)
   public
-    procedure update(state: TPoint; action: integer; reward: Single;
-      done: Boolean); override;
+    procedure update(state, next_state: TPoint; action: integer; reward: Single;
+      done: Boolean); virtual;
   end;
 
   TQLearningAgent = class(TQLearnAgent)
   public
     function getAction(state: TPoint): integer; override;
-    procedure update(state: TPoint; action: integer; reward: Single;
+    procedure update(state, next_state: TPoint; action: integer; reward: Single;
       done: Boolean); override;
   end;
 
@@ -272,7 +272,7 @@ begin
     begin
       action := agent.getAction(state);
       data := grid_world.step(action);
-      agent.update(state, action, data.reward, data.done);
+      agent.update(state, data.next_state, action, data.reward, data.done);
       if data.done then
         break;
       state := data.next_state;
@@ -737,7 +737,7 @@ end;
 
 { TQLearnAgent }
 
-procedure TQLearnAgent.update(state: TPoint; action: integer; reward: Single;
+procedure TQLearnAgent.update(state, next_state: TPoint; action: integer; reward: Single;
   done: Boolean);
 var
   next_q_max, target: Single;
@@ -747,7 +747,7 @@ begin
     next_q_max := 0
   else
   begin
-    next_qs := FQ[Env.change(state)];
+    next_qs := FQ[Env.change(next_state)];
     next_q_max := MaxValue(next_qs);
   end;
   target := reward + gamma * next_q_max;
@@ -763,7 +763,7 @@ var
   probs: TArray<Single>;
   p: Single;
 begin
-  if Random < 0.1 then
+  if Random < 0.5 then
   begin
     probs := [0.25, 0.25, 0.25, 0.25];
     p := Random;
@@ -781,7 +781,7 @@ begin
     result := inherited;
 end;
 
-procedure TQLearningAgent.update(state: TPoint; action: integer; reward: Single;
+procedure TQLearningAgent.update(state, next_state: TPoint; action: integer; reward: Single;
   done: Boolean);
 var
   next_q_max, target: Single;
@@ -791,11 +791,12 @@ begin
     next_q_max := 0
   else
   begin
-    next_qs := FQ[Env.change(state)];
+    next_qs := FQ[Env.change(next_state)];
     next_q_max := MaxValue(next_qs);
   end;
   target := reward + gamma * next_q_max;
   Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
+  greedy_probs(FPi[env.change(state)], state);
 end;
 
 end.
