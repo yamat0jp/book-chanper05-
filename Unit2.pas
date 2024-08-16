@@ -636,14 +636,14 @@ begin
   if memory.Count < 2 then
     Exit;
   data := memory.Dequeue;;
-  next_data := memory.Dequeue;
+  next_data := memory.Peek;
   if done then
     next_q := 0
   else
     next_q := Q[next_data.state, next_data.action];
   target := reward + gamma * next_q;
-  Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
-  greedy_probs(FPi[Env.change(state)], state);
+  Q[data.state, data.action] := Q[data.state, data.action] + (target - Q[data.state, data.action]) * alpha;
+  greedy_probs(FPi[Env.change(data.state)], data.state);
 end;
 
 { TSaraOffPolicyAgent }
@@ -717,7 +717,7 @@ begin
   if memory.Count < 2 then
     Exit;
   data := memory.Dequeue;
-  next_data := memory.Dequeue;
+  next_data := memory.Peek;
   if done then
   begin
     next_q := 0;
@@ -730,9 +730,9 @@ begin
       [next_data.action];
   end;
   target := rho * (reward + gamma * next_q);
-  Q[state, action] := Q[state, action] + (target - Q[state, action]) * alpha;
-  greedy_probs(FPi[Env.change(state)], state, 0);
-  greedy_probs(Fb[Env.change(state)], state);
+  Q[data.state, data.action] := Q[data.state, data.action] + (target - Q[data.state, data.action]) * alpha;
+  greedy_probs(FPi[Env.change(data.state)], data.state, 0);
+  greedy_probs(Fb[Env.change(data.state)], data.state);
 end;
 
 { TQLearnAgent }
